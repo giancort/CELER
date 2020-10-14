@@ -59,3 +59,6 @@ update statistics BRANCH_EC
 update statistics ESTABLISHMENT_CONDITIONS
 update statistics PROVISORY_PASS_USER
 update statistics CONTACT_USERS
+
+
+--teste
