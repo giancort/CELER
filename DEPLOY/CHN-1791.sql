@@ -1,0 +1,2147 @@
+--ST-2184
+
+GO
+
+IF OBJECT_ID('SP_LS_PROTOCOLS_TO_SEND') IS NOT NULL
+DROP PROCEDURE SP_LS_PROTOCOLS_TO_SEND
+
+GO
+CREATE PROCEDURE SP_LS_PROTOCOLS_TO_SEND    
+/*----------------------------------------------------------------------------------------                    
+Project.......: TKPP                    
+------------------------------------------------------------------------------------------                    
+Author                          VERSION        Date                            Description                    
+------------------------------------------------------------------------------------------                    
+Caike Uchoa                       V2        04/06/2021                       ADD COD_FIN_CALENDAR                    
+------------------------------------------------------------------------------------------*/         
+(@COD_AFF INT)         
+AS          
+BEGIN          
+          
+WITH CTE          
+AS          
+(SELECT          
+  PROTOCOLS.COD_PAY_PROT          
+    ,PROTOCOLS.CREATED_AT PAYMENT_DATE          
+    ,PROTOCOL          
+    ,VALUE PROTOCOL_VALUE          
+    ,JUSTIFICATIVE          
+    ,COMMERCIAL_ESTABLISHMENT.NAME MERCHANT_NAME          
+    ,COMMERCIAL_ESTABLISHMENT.CPF_CNPJ MERCHANT_DOC          
+    ,BDE.AGENCY          
+    ,BDE.DIGIT_AGENCY          
+    ,BDE.ACCOUNT          
+    ,bde.DIGIT_ACCOUNT          
+    ,B.NAME BANK_NAME          
+    ,B.CODE BANK_CODE          
+    ,B.ISPB          
+    ,ACCOUNT_TYPE.NAME ACCOUNT_NAME          
+    ,'TITLE' AS TYPE          
+    ,[TRANSACTION].CODE AS CODE          
+    ,TRANSACTION_TITLES.PLOT          
+    ,CONCAT([TRANSACTION].CODE, ' - ', [TRANSACTION_TITLES].PLOT, '/',          
+  [TRANSACTION].PLOTS) DESCRIPTION          
+    ,CAST(((([TRANSACTION_TITLES].[AMOUNT] * (1 - ([TRANSACTION_TITLES].[TAX_INITIAL] / 100))) *          
+  IIF([TRANSACTION_TITLES].[ANTICIP_PERCENT] IS NULL, 1,          
+  1 - ((([TRANSACTION_TITLES].[ANTICIP_PERCENT] / 30) *          
+  COALESCE(IIF([TRANSACTION_TITLES].[IS_SPOT] = 1,          
+  DATEDIFF(DAY, [TRANSACTION_TITLES].[PREVISION_PAY_DATE],          
+  [TRANSACTION_TITLES].[ORIGINAL_RECEIVE_DATE]),          
+  [TRANSACTION_TITLES].[QTY_DAYS_ANTECIP]),          
+  ([TRANSACTION_TITLES].[PLOT] * 30) - 1)) /          
+  100))) -          
+  (IIF([TRANSACTION_TITLES].[PLOT] = 1, [TRANSACTION_TITLES].[RATE], 0))) AS DECIMAL(22, 6)) AS AMOUNT_PAID      
+  ,ARRANG_TO_PAY.COD_FIN_CALENDAR    
+ FROM PROTOCOLS          
+ JOIN COMMERCIAL_ESTABLISHMENT          
+  ON COMMERCIAL_ESTABLISHMENT.COD_EC = PROTOCOLs.COD_EC          
+ JOIN BANK_DETAILS_EC BDE          
+  ON PROTOCOLS.COD_BK_EC = BDE.COD_BK_EC          
+ JOIN BANKS B          
+  ON BDE.COD_BANK = B.COD_BANK          
+ JOIN ACCOUNT_TYPE          
+  ON BDE.COD_TYPE_ACCOUNT = ACCOUNT_TYPE.COD_TYPE_ACCOUNT          
+ JOIN ARRANG_TO_PAY          
+  ON PROTOCOLS.COD_PAY_PROT = ARRANG_TO_PAY.COD_PAY_PROT          
+ JOIN DETAILS_ARRANG_TO_PAY DATP          
+  ON ARRANG_TO_PAY.COD_ARR_PAY = DATP.COD_ARR_PAY          
+ JOIN TRANSACTION_TITLES(NOLOCK)          
+  ON DATP.COD_TITTLE = TRANSACTION_TITLES.COD_TITLE          
+ JOIN [TRANSACTION](NOLOCK)          
+  ON TRANSACTION_TITLES.COD_TRAN = [TRANSACTION].COD_TRAN         
+ WHERE ISNULL(PROTOCOLS.WEBHOOK_SENDED,0) = 0          
+ AND COMMERCIAL_ESTABLISHMENT.COD_AFFILIATOR = @COD_AFF          
+ AND cast(PROTOCOLS.CREATED_AT as date) BETWEEN  cast(  DATEADD(DAY, -1, GETDATE()) as date) AND  cast(GETDATE() as date)        
+ UNION ALL          
+ SELECT          
+  PROTOCOLS.COD_PAY_PROT          
+    ,PROTOCOLS.CREATED_AT PAYMENT_DATE          
+    ,PROTOCOL          
+    ,PROTOCOLS.VALUE PROTOCOL_VALUE          
+    ,JUSTIFICATIVE          
+    ,COMMERCIAL_ESTABLISHMENT.NAME MERCHANT_NAME          
+    ,COMMERCIAL_ESTABLISHMENT.CPF_CNPJ MERCHANT_DOC          
+    ,BDE.AGENCY          
+    ,BDE.DIGIT_AGENCY          
+    ,BDE.ACCOUNT          
+    ,bde.DIGIT_ACCOUNT          
+    ,B.NAME BANK_NAME          
+    ,B.CODE BANK_CODE          
+    ,B.ISPB          
+    ,ACCOUNT_TYPE.NAME ACCOUNT_NAME          
+    ,'ADJUSTMENT' AS TYPE          
+    ,CAST(RELEASE_ADJUSTMENTS.COD_REL_ADJ AS VARCHAR(100)) AS CODE          
+    ,1 AS PLOT          
+    ,CONCAT([RELEASE_ADJUSTMENTS].COMMENT, ' - ', TJ.DESCRIPTION) DESCRIPTION          
+    ,RELEASE_ADJUSTMENTS.VALUE AS AMOUNT_PAID    
+ ,ARRANG_TO_PAY.COD_FIN_CALENDAR    
+ FROM PROTOCOLS          
+ JOIN COMMERCIAL_ESTABLISHMENT          
+  ON COMMERCIAL_ESTABLISHMENT.COD_EC = PROTOCOLs.COD_EC          
+ JOIN BANK_DETAILS_EC BDE          
+  ON PROTOCOLS.COD_BK_EC = BDE.COD_BK_EC          
+ JOIN BANKS B          
+  ON BDE.COD_BANK = B.COD_BANK          
+ JOIN ACCOUNT_TYPE          
+  ON BDE.COD_TYPE_ACCOUNT = ACCOUNT_TYPE.COD_TYPE_ACCOUNT          
+ JOIN ARRANG_TO_PAY          
+  ON PROTOCOLS.COD_PAY_PROT = ARRANG_TO_PAY.COD_PAY_PROT          
+ JOIN DETAILS_ARRANG_TO_PAY DATP          
+  ON ARRANG_TO_PAY.COD_ARR_PAY = DATP.COD_ARR_PAY          
+ JOIN RELEASE_ADJUSTMENTS(NOLOCK)          
+  ON DATP.COD_REL_ADJ = RELEASE_ADJUSTMENTS.COD_REL_ADJ          
+ JOIN TYPE_JUSTIFICATION TJ          
+  ON RELEASE_ADJUSTMENTS.COD_TYPEJUST = TJ.COD_TYPEJUST          
+ WHERE PROTOCOLS.WEBHOOK_SENDED = 0          
+ AND COMMERCIAL_ESTABLISHMENT.COD_AFFILIATOR = @COD_AFF         
+AND cast(PROTOCOLS.CREATED_AT as date) BETWEEN cast(  DATEADD(DAY, -1, GETDATE()) as date) AND  cast(GETDATE() as date)        
+ UNION ALL          
+ SELECT          
+  PROTOCOLS.COD_PAY_PROT          
+    ,PROTOCOLS.CREATED_AT PAYMENT_DATE          
+    ,PROTOCOL          
+    ,PROTOCOLS.VALUE PROTOCOL_VALUE          
+    ,JUSTIFICATIVE          
+    ,COMMERCIAL_ESTABLISHMENT.NAME MERCHANT_NAME          
+    ,COMMERCIAL_ESTABLISHMENT.CPF_CNPJ MERCHANT_DOC          
+    ,BDE.AGENCY          
+    ,BDE.DIGIT_AGENCY          
+    ,BDE.ACCOUNT          
+    ,bde.DIGIT_ACCOUNT          
+    ,B.NAME BANK_NAME          
+    ,B.CODE BANK_CODE          
+    ,B.ISPB          
+    ,ACCOUNT_TYPE.NAME ACCOUNT_NAME          
+    ,'TARIFF' AS TYPE          
+    ,CAST(TARIFF_EC.COD_TARIFF_EC AS VARCHAR(100)) AS CODE          
+    ,TARIFF_EC.PLOT          
+    ,CONCAT([TYPE_TARIFF].NAME, ' - ', TYPE_TARIFF.TYPE, ' ', TARIFF_EC.PLOT, '/',          
+  TYPE_TARIFF.QTY_PLOTS, ' ',          
+  TARIFF_EC.COMMENT) DESCRIPTION          
+    ,TARIFF_EC.VALUE AS AMOUNT_PAID        
+ ,ARRANG_TO_PAY.COD_FIN_CALENDAR    
+ FROM PROTOCOLS          
+ JOIN COMMERCIAL_ESTABLISHMENT          
+  ON COMMERCIAL_ESTABLISHMENT.COD_EC = PROTOCOLs.COD_EC          
+ JOIN BANK_DETAILS_EC BDE          
+  ON PROTOCOLS.COD_BK_EC = BDE.COD_BK_EC          
+ JOIN BANKS B          
+  ON BDE.COD_BANK = B.COD_BANK          
+ JOIN ACCOUNT_TYPE          
+  ON BDE.COD_TYPE_ACCOUNT = ACCOUNT_TYPE.COD_TYPE_ACCOUNT          
+ JOIN ARRANG_TO_PAY          
+  ON PROTOCOLS.COD_PAY_PROT = ARRANG_TO_PAY.COD_PAY_PROT          
+ JOIN DETAILS_ARRANG_TO_PAY DATP          
+  ON ARRANG_TO_PAY.COD_ARR_PAY = DATP.COD_ARR_PAY          
+ JOIN TARIFF_EC(NOLOCK)          
+  ON DATP.COD_TARIFF_EC = TARIFF_EC.COD_TARIFF_EC          
+ JOIN TYPE_TARIFF          
+  ON TARIFF_EC.COD_TTARIFF = TYPE_TARIFF.COD_TTARIFF          
+ WHERE ISNULL(PROTOCOLS.WEBHOOK_SENDED, 0) = 0          
+ AND COMMERCIAL_ESTABLISHMENT.COD_AFFILIATOR = @COD_AFF          
+AND cast(PROTOCOLS.CREATED_AT as date) BETWEEN  cast(  DATEADD(DAY, -1, GETDATE()) as date) AND  cast(GETDATE() as date)        
+ UNION ALL          
+ SELECT          
+     PROTOCOLS.COD_PAY_PROT          
+    ,PROTOCOLS.CREATED_AT PAYMENT_DATE          
+    ,PROTOCOL          
+    ,PROTOCOLS.VALUE PROTOCOL_VALUE          
+    ,JUSTIFICATIVE          
+    ,COMMERCIAL_ESTABLISHMENT.NAME MERCHANT_NAME          
+    ,COMMERCIAL_ESTABLISHMENT.CPF_CNPJ MERCHANT_DOC          
+    ,BDE.AGENCY          
+    ,BDE.DIGIT_AGENCY          
+    ,BDE.ACCOUNT          
+    ,bde.DIGIT_ACCOUNT          
+    ,B.NAME BANK_NAME          
+    ,B.CODE BANK_CODE          
+    ,B.ISPB          
+    ,ACCOUNT_TYPE.NAME ACCOUNT_NAME          
+    ,'BILLET' AS TYPE          
+    ,CAST(FINANCIAL_BILLET.COD_FIN_BILLET AS VARCHAR(100)) AS CODE          
+    ,1 PLOT          
+    ,CONCAT(BILLET_TRANSACTION.TRANSACTION_CODE, ' ', BILLET_TRANSACTION.BARCODE) DESCRIPTION          
+  ,FINANCIAL_BILLET.AMOUNT AS AMOUNT_PAID     
+    ,ARRANG_TO_PAY.COD_FIN_CALENDAR    
+ FROM PROTOCOLS          
+ JOIN COMMERCIAL_ESTABLISHMENT          
+  ON COMMERCIAL_ESTABLISHMENT.COD_EC = PROTOCOLs.COD_EC          
+ JOIN BANK_DETAILS_EC BDE          
+  ON PROTOCOLS.COD_BK_EC = BDE.COD_BK_EC          
+ JOIN BANKS B          
+  ON BDE.COD_BANK = B.COD_BANK          
+ JOIN ACCOUNT_TYPE      
+  ON BDE.COD_TYPE_ACCOUNT = ACCOUNT_TYPE.COD_TYPE_ACCOUNT          
+ JOIN ARRANG_TO_PAY          
+  ON PROTOCOLS.COD_PAY_PROT = ARRANG_TO_PAY.COD_PAY_PROT          
+ JOIN DETAILS_ARRANG_TO_PAY DATP          
+  ON ARRANG_TO_PAY.COD_ARR_PAY = DATP.COD_ARR_PAY          
+ JOIN FINANCIAL_BILLET(NOLOCK)          
+  ON DATP.COD_FIN_BILLET = FINANCIAL_BILLET.COD_FIN_BILLET          
+ JOIN BILLET_TRANSACTION          
+  ON FINANCIAL_BILLET.COD_BILLET = BILLET_TRANSACTION.COD_BILLET          
+ WHERE ISNULL(PROTOCOLS.WEBHOOK_SENDED, 0) = 0          
+ AND COMMERCIAL_ESTABLISHMENT.COD_AFFILIATOR = @COD_AFF          
+AND cast(PROTOCOLS.CREATED_AT as date) BETWEEN  cast(  DATEADD(DAY, -1, GETDATE()) as date) AND  cast(GETDATE() as date))        
+        
+SELECT          
+ *          
+FROM CTE          
+ORDER BY PAYMENT_DATE          
+END
+
+--ST-2184
+
+GO
+--ST-2220
+
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM sys.columns
+	WHERE NAME = N'COD_MODEL'
+	AND object_id = OBJECT_ID(N'ROUTE_ACQUIRER_DEFAULT'))
+BEGIN
+
+ALTER TABLE ROUTE_ACQUIRER_DEFAULT ADD COD_MODEL INT
+
+END
+
+GO
+
+DECLARE @COD_MODEL_GLOBAL INT;
+DECLARE @COD_MODEL_UP INT;
+DECLARE @COD_AC_GLOBAL INT;
+
+SET @COD_AC_GLOBAL = (SELECT COD_AC FROM ACQUIRER WHERE ACTIVE = 1 AND [NAME]='GLOBALPAYMENTS')
+
+SET @COD_MODEL_GLOBAL = (SELECT COD_MODEL FROM EQUIPMENT_MODEL WHERE CODIGO = 'D150GLOBAL');
+
+SELECT 
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+@COD_AC_GLOBAL AS COD_AC,
+COD_SOURCE_TRAN
+INTO #TEMP_ROUTE_GLOBAL
+FROM ROUTE_ACQUIRER_DEFAULT
+WHERE COD_AC = 10
+
+IF (SELECT COUNT(*) FROM ROUTE_ACQUIRER_DEFAULT WHERE COD_MODEL = @COD_MODEL_GLOBAL) = 0
+INSERT INTO ROUTE_ACQUIRER_DEFAULT 
+(
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+COD_AC,
+COD_SOURCE_TRAN,
+COD_MODEL
+)
+SELECT 
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+COD_AC,
+COD_SOURCE_TRAN,
+@COD_MODEL_GLOBAL AS COD_MODEL
+FROM #TEMP_ROUTE_GLOBAL
+
+
+SELECT
+COD_MODEL 
+INTO #MODEL
+FROM EQUIPMENT_MODEL WHERE ONLINE IS NULL AND CODIGO <> 'D150GLOBAL'
+
+
+SELECT 
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+COD_AC,
+COD_SOURCE_TRAN
+INTO #TEMP_ROUTE
+FROM ROUTE_ACQUIRER_DEFAULT WHERE COD_MODEL IS NULL
+
+
+SET @COD_MODEL_UP = (SELECT TOP 1 COD_MODEL
+FROM #MODEL);
+
+UPDATE ROUTE_ACQUIRER_DEFAULT SET COD_MODEL = @COD_MODEL_UP WHERE COD_MODEL IS NULL
+
+DELETE FROM #MODEL WHERE COD_MODEL = @COD_MODEL_UP;
+
+WHILE (SELECT COUNT(*) FROM #MODEL) > 0
+BEGIN
+
+SELECT TOP 1 COD_MODEL
+INTO #TEMP_INSERT
+FROM #MODEL
+
+IF (SELECT COUNT(*) FROM ROUTE_ACQUIRER_DEFAULT WHERE COD_MODEL= (SELECT COD_MODEL FROM #TEMP_INSERT))  = 0
+INSERT INTO ROUTE_ACQUIRER_DEFAULT 
+(
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+COD_AC,
+COD_SOURCE_TRAN,
+COD_MODEL
+)
+SELECT 
+COD_USER,
+ACTIVE,
+CONF_TYPE,
+COD_BRAND,
+COD_AC,
+COD_SOURCE_TRAN,
+(SELECT COD_MODEL FROM #TEMP_INSERT) AS COD_MODEL
+FROM #TEMP_ROUTE
+
+
+DELETE FROM #MODEL WHERE COD_MODEL = (SELECT COD_MODEL FROM #TEMP_INSERT)
+
+DROP TABLE #TEMP_INSERT
+
+
+END 
+
+
+
+DROP TABLE #TEMP_ROUTE
+DROP TABLE #MODEL
+DROP TABLE #TEMP_ROUTE_GLOBAL
+
+
+GO
+
+IF OBJECT_ID('SP_REG_ASS_TID_EQUIP_EC') IS NOT NULL
+DROP PROCEDURE [SP_REG_ASS_TID_EQUIP_EC]
+
+GO
+CREATE PROCEDURE [dbo].[SP_REG_ASS_TID_EQUIP_EC]            
+/*----------------------------------------------------------------------------------------                          
+Procedure Name: [SP_REG_ASS_TID_EQUIP_EC]                          
+Project.......: TKPP                          
+-------------------------------------------------------------------------------------------                          
+Author                            VERSION        Date                          Description                          
+------------------------------------------  ------------------------------------------------                          
+Elir Ribeiro                       v1          22/08/2018                       CREATION                          
+Caike Uch�a                        v2          01/11/2019                        UPDATE        
+Caike Uch�a                        v3          16/01/2020                   inserir MCC padr�o para PF       
+Caike Uch�a                        v6          10/08/2020              Retirar Trava equip Bluetooth  
+Caike Uch�a                        v7          17/06/2021              add valid global e add COD_USER
+ ------------------------------------------------------------------------------------------*/             
+(            
+ @COD_EQUIP int,            
+ @COD_AC int,            
+ @COD_EC int,            
+ @COD_COMP int,
+ @COD_USER INT
+)            
+AS            
+  DECLARE @TID varchar(100);      
+          
+            
+  DECLARE @TIDAT varchar(100);      
+          
+            
+  DECLARE @NAME varchar(100);      
+          
+            
+  DECLARE @INSIDE int;      
+          
+            
+  DECLARE @TYPE_MODEL varchar(100);      
+          
+            
+  DECLARE @AVAILABLE int;      
+          
+            
+  DECLARE @NAME_AC varchar(20);      
+   
+  DECLARE @MODEL VARCHAR(100);
+  
+  DECLARE @COD_MODEL INT;
+        
+          
+  BEGIN      
+      
+SET @NAME_AC = (SELECT      
+  [GROUP]      
+ FROM ACQUIRER      
+ WHERE COD_AC = @COD_AC)      
+      
+SELECT      
+ @TYPE_MODEL = MODEL_GROUP.CODE,      
+ @MODEL = CODIGO,
+ @COD_MODEL= EQUIPMENT.COD_MODEL
+FROM EQUIPMENT      
+INNER JOIN EQUIPMENT_MODEL      
+ ON EQUIPMENT_MODEL.COD_MODEL = EQUIPMENT.COD_MODEL      
+INNER JOIN MODEL_GROUP      
+ ON MODEL_GROUP.COD_MODEL_GROUP = EQUIPMENT_MODEL.COD_MODEL_GROUP      
+WHERE COD_EQUIP = @COD_EQUIP      
+      
+IF @TYPE_MODEL <> 'ONLINE'      
+BEGIN      
+SET @TYPE_MODEL = 'PRESENCIAL';      
+          
+          
+IF @NAME_AC = UPPER('PagSeguro') AND @MODEL <> 'D150GLOBAL' --PAGSEGURO                                  
+BEGIN      
+      
+-- SELECIONO O AC PELO SEGMENTO            
+SELECT      
+ @COD_AC =      
+ (CASE      
+  WHEN TYPE_ESTAB.CODE = 'PF' THEN 10      
+  ELSE ACQUIRER.COD_AC      
+ END)      
+FROM COMMERCIAL_ESTABLISHMENT      
+JOIN SEGMENTS      
+ ON SEGMENTS.COD_SEG = COMMERCIAL_ESTABLISHMENT.COD_SEG      
+JOIN SEGMENTS_GROUP      
+ ON SEGMENTS_GROUP.COD_SEG_GROUP = SEGMENTS.COD_SEG_GROUP      
+JOIN ACQUIRER      
+ ON ACQUIRER.COD_SEG_GROUP = SEGMENTS_GROUP.COD_SEG_GROUP      
+  and ACQUIRER.[GROUP] = 'PAGSEGURO'    
+INNER JOIN TYPE_ESTAB      
+ ON TYPE_ESTAB.COD_TYPE_ESTAB = COMMERCIAL_ESTABLISHMENT.COD_TYPE_ESTAB      
+WHERE COD_EC = @COD_EC;      
+      
+      
+SELECT TOP 1      
+ @TID = CODE      
+FROM DATA_EQUIPMENT_AC      
+WHERE COD_EQUIP = @COD_EQUIP      
+AND COD_AC = @COD_AC      
+AND ACTIVE = 1;      
+      
+-- Verifica se tem TID para Pagseguro          
+IF (SELECT      
+   COUNT(*)      
+  FROM [dbo].[DATA_EQUIPMENT_AC]      
+  WHERE DATA_EQUIPMENT_AC.COD_EQUIP = @COD_EQUIP      
+  AND DATA_EQUIPMENT_AC.COD_AC = @COD_AC      
+  AND ACTIVE = 1      
+  AND CODE = @TID)      
+ = 0      
+BEGIN      
+      
+SELECT TOP 1      
+ @TID = TID      
+   ,@NAME = [NAME]      
+   ,@INSIDE = COD_DATA_EQUIP      
+FROM DATA_TID_AVAILABLE_EC      
+WHERE COD_AC = @COD_AC      
+AND TYPE_KEY_AC = @TYPE_MODEL      
+AND AVAILABLE = 1      
+AND ACTIVE = 1      
+      
+IF @TID IS NOT NULL      
+BEGIN      
+--THROW 61042, 'TID NOT AVAILABLE', 1;          
+      
+INSERT INTO [dbo].[DATA_EQUIPMENT_AC] ([CREATED_AT]      
+, [COD_EQUIP]      
+, [COD_COMP]      
+, [COD_AC]      
+, [NAME]      
+, [CODE]      
+, [MODIFY_DATE]      
+, [ACTIVE])      
+ VALUES (GETDATE(), @COD_EQUIP, @COD_COMP, @COD_AC, @NAME, @TID, NULL, 1);      
+      
+IF @@rowcount < 1      
+THROW 60000, 'COULD NOT REGISTER TID EQUIPMENT', 1;      
+      
+UPDATE DATA_TID_AVAILABLE_EC      
+SET AVAILABLE = 0      
+WHERE COD_DATA_EQUIP = @INSIDE;      
+      
+IF @@rowcount < 1      
+THROW 60001, 'COULD UPDATE TID EQUIPMENT AVAILABLE', 1;      
+      
+END      
+ELSE      
+SELECT      
+ 'TID N�O DISPON�VEL PARA ASSOCIA��O' AS [MESSAGE];      
+      
+END      
+
+      
+END 
+
+IF @MODEL = 'D150GLOBAL'
+BEGIN     
+
+
+IF (SELECT 
+COUNT(*)
+FROM COMMERCIAL_ESTABLISHMENT
+JOIN ACQUIRER_KEYS_CREDENTIALS
+ON ACQUIRER_KEYS_CREDENTIALS.CODE_EC = COMMERCIAL_ESTABLISHMENT.COD_EC
+JOIN ACQUIRER
+ON ACQUIRER.COD_AC = ACQUIRER_KEYS_CREDENTIALS.COD_AC
+AND ACQUIRER.ACTIVE = 1
+AND ACQUIRER.[GROUP] = 'GlobalPayments'
+WHERE COMMERCIAL_ESTABLISHMENT.COD_EC = @COD_EC ) = 0 
+
+THROW 60086, 'THERE IS NO KEY FOR THE GLOBAL ACQUIRER', 1;      
+ 
+
+ IF (SELECT      
+   COUNT(*)      
+  FROM ROUTE_ACQUIRER      
+  WHERE COD_EQUIP = @COD_EQUIP      
+  AND ACTIVE = 1)      
+ = 0      
+      
+-- Insere uma rota padr�o para o Equipamento              
+INSERT INTO ROUTE_ACQUIRER (COD_USER, COD_EQUIP, ACTIVE, CONF_TYPE, COD_BRAND, COD_AC, COD_SOURCE_TRAN)      
+ SELECT      
+     @COD_USER      
+    ,@COD_EQUIP    
+    ,1      
+    ,CONF_TYPE      
+    ,COD_BRAND      
+    ,ACQUIRER.COD_AC      
+    ,COD_SOURCE_TRAN      
+ FROM ROUTE_ACQUIRER_DEFAULT 
+ JOIN ACQUIRER 
+ ON ACQUIRER.COD_AC = ROUTE_ACQUIRER_DEFAULT.COD_AC
+ WHERE ACQUIRER.[GROUP] = 'GlobalPayments'
+ AND ACQUIRER.ACTIVE = 1
+ AND ROUTE_ACQUIRER_DEFAULT.COD_MODEL = @COD_MODEL     
+
+
+
+END
+ELSE -- DIFERENTE DE PAGSEGURO                                   
+BEGIN      
+      
+IF (SELECT      
+   COUNT(*)      
+  FROM [dbo].[DATA_EQUIPMENT_AC]      
+  WHERE DATA_EQUIPMENT_AC.COD_EQUIP = @COD_EQUIP      
+  AND DATA_EQUIPMENT_AC.COD_AC = @COD_AC      
+  AND ACTIVE = 1)      
+ > 0      
+THROW 61040, 'EQUIPMENT DATA ALREADY REGISTERED FOR THIS ACQUIRER', 1      
+      
+SELECT TOP 1      
+ @TID = TID      
+   ,@NAME = [NAME]      
+   ,@INSIDE = COD_DATA_EQUIP      
+FROM DATA_TID_AVAILABLE_EC      
+WHERE COD_EC = @COD_EC      
+AND COD_AC = @COD_AC      
+AND AVAILABLE = 1      
+AND TYPE_KEY_AC = @TYPE_MODEL      
+AND ACTIVE = 1      
+      
+IF @TID IS NULL      
+THROW 61042, 'TID NOT AVAILABLE', 1;      
+      
+INSERT INTO [dbo].[DATA_EQUIPMENT_AC] ([CREATED_AT]      
+, [COD_EQUIP]      
+, [COD_COMP]      
+, [COD_AC]      
+, [NAME]      
+, [CODE]      
+, [MODIFY_DATE]      
+, [ACTIVE])      
+ VALUES (GETDATE(), @COD_EQUIP, @COD_COMP, @COD_AC, @NAME, @TID, NULL, 1)      
+      
+IF @@rowcount < 1      
+THROW 60000, 'COULD NOT REGISTER TID EQUIPMENT', 1;      
+      
+UPDATE DATA_TID_AVAILABLE_EC      
+SET AVAILABLE = 0      
+WHERE COD_DATA_EQUIP = @INSIDE;      
+      
+IF @@rowcount < 1      
+      
+THROW 60001, 'COULD UPDATE TID EQUIPMENT AVAILABLE', 1;      
+      
+END      
+      
+END      
+      
+END;
+
+
+GO
+
+IF OBJECT_ID('SP_REG_ASS_TID_EQUIP_EC_AFF') IS NOT NULL
+DROP PROCEDURE [SP_REG_ASS_TID_EQUIP_EC_AFF]
+
+GO
+CREATE  PROCEDURE [dbo].[SP_REG_ASS_TID_EQUIP_EC_AFF]                
+/*----------------------------------------------------------------------------------------                           
+Procedure Name: [SP_REG_ASS_TID_EQUIP_EC_AFF]                              
+Project.......: TKPP                              
+-------------------------------------------------------------------------------------------                              
+Author                            VERSION        Date                          Description                              
+------------------------------------------------------------------------------------------                              
+Elir Ribeiro                       v1         22/08/2018                       CREATION                       
+Caike Uch�a                        v2         24/09/2019            ADAPTA��O DA SUB PARA O AFILIADOR              
+Caike Uch�a                        v3         15/10/2019                       UPDATE           
+Caike Uch�a                        v4         31/10/2019                       UPDATE      
+Caike Uch�a                        v5         16/01/2020             inserir MCC padr�o para PF       
+Caike Uch�a                        v6         10/08/2020              Retirar Trava equip Bluetooth  
+Caike Uch�a                        v7         17/06/2021                   add valid global
+------------------------------------------------------------------------------------------*/                 
+(                
+ @COD_EQUIP INT,               
+ @COD_USER INT,              
+ @COD_DEPTO INT,              
+ @COD_COMP INT              
+)                
+AS                
+  DECLARE @TID varchar(100);      
+                
+  DECLARE @TIDAT varchar(100);      
+                
+  DECLARE @NAME varchar(100);      
+                
+  DECLARE @INSIDE int;      
+                
+  DECLARE @TYPE_MODEL varchar(100);      
+                
+  DECLARE @AVAILABLE int;      
+                
+  DECLARE @NAME_AC varchar(20);      
+                
+  DECLARE @COD_AC INT;              
+               
+  DECLARE @CONT INT;      
+
+  DECLARE @MODEL VARCHAR(100);
+  
+  DECLARE @COD_MODEL INT;
+              
+  BEGIN 
+        
+SELECT      
+ @TYPE_MODEL = MODEL_GROUP.CODE,     
+ @MODEL = CODIGO,
+ @COD_MODEL= EQUIPMENT.COD_MODEL
+FROM EQUIPMENT      
+INNER JOIN EQUIPMENT_MODEL      
+ ON EQUIPMENT_MODEL.COD_MODEL = EQUIPMENT.COD_MODEL      
+INNER JOIN MODEL_GROUP      
+ ON MODEL_GROUP.COD_MODEL_GROUP = EQUIPMENT_MODEL.COD_MODEL_GROUP      
+WHERE COD_EQUIP = @COD_EQUIP      
+      
+IF @TYPE_MODEL <> 'ONLINE'          
+BEGIN      
+SET @TYPE_MODEL = 'PRESENCIAL';   
+
+ IF @MODEL <> 'D150GLOBAL'
+BEGIN     
+-- SELECIONO O AC PELO SEGMENTO                
+SELECT      
+ @COD_AC =      
+ (CASE      
+  WHEN TYPE_ESTAB.CODE = 'PF' THEN 10      
+  ELSE ACQUIRER.COD_AC      
+ END)      
+FROM COMMERCIAL_ESTABLISHMENT      
+JOIN SEGMENTS      
+ ON SEGMENTS.COD_SEG = COMMERCIAL_ESTABLISHMENT.COD_SEG      
+JOIN SEGMENTS_GROUP      
+ ON SEGMENTS_GROUP.COD_SEG_GROUP = SEGMENTS.COD_SEG_GROUP      
+JOIN ACQUIRER      
+ ON ACQUIRER.COD_SEG_GROUP = SEGMENTS_GROUP.COD_SEG_GROUP      
+ AND ACQUIRER.[GROUP] = 'PAGSEGURO'    
+JOIN BRANCH_EC      
+ ON BRANCH_EC.COD_EC = COMMERCIAL_ESTABLISHMENT.COD_EC      
+JOIN DEPARTMENTS_BRANCH      
+ ON DEPARTMENTS_BRANCH.COD_BRANCH = BRANCH_EC.COD_BRANCH      
+INNER JOIN TYPE_ESTAB      
+ ON TYPE_ESTAB.COD_TYPE_ESTAB = COMMERCIAL_ESTABLISHMENT.COD_TYPE_ESTAB      
+WHERE COD_DEPTO_BRANCH = @COD_DEPTO;      
+      
+--Verifica se o terminal n�o possui rota              
+      
+IF (SELECT      
+   COUNT(*)      
+  FROM ROUTE_ACQUIRER      
+  WHERE COD_EQUIP = @COD_EQUIP      
+  AND ACTIVE = 1)      
+ = 0      
+      
+      
+-- Insere uma rota padr�o para o Equipamento              
+INSERT INTO ROUTE_ACQUIRER (COD_USER, COD_EQUIP, ACTIVE, CONF_TYPE, COD_BRAND, COD_AC, COD_SOURCE_TRAN)      
+ SELECT      
+  @COD_USER      
+    ,@COD_EQUIP      
+    ,1      
+    ,CONF_TYPE      
+    ,COD_BRAND      
+    ,COD_AC      
+    ,COD_SOURCE_TRAN      
+ FROM ROUTE_ACQUIRER_DEFAULT      
+ WHERE COD_AC = 10      
+ AND COD_MODEL = @COD_MODEL     
+      
+SELECT TOP 1      
+ @TID = CODE      
+FROM DATA_EQUIPMENT_AC      
+WHERE COD_EQUIP = @COD_EQUIP      
+AND COD_AC = @COD_AC      
+AND ACTIVE = 1;      
+      
+-- Verifica se tem TID na Pagseguro              
+IF (SELECT      
+   COUNT(*)      
+  FROM [dbo].[DATA_EQUIPMENT_AC]      
+  WHERE DATA_EQUIPMENT_AC.COD_EQUIP = @COD_EQUIP      
+  AND DATA_EQUIPMENT_AC.COD_AC = @COD_AC      
+  AND ACTIVE = 1      
+  AND CODE = @TID)      
+ = 0      
+BEGIN      
+SELECT TOP 1      
+ @TID = TID      
+   ,@NAME = [NAME]      
+   ,@INSIDE = COD_DATA_EQUIP      
+FROM DATA_TID_AVAILABLE_EC      
+WHERE COD_AC = @COD_AC      
+AND TYPE_KEY_AC = @TYPE_MODEL      
+AND AVAILABLE = 1      
+AND ACTIVE = 1      
+      
+IF @TID IS NULL      
+THROW 61042, 'TID NOT AVAILABLE', 1;      
+      
+INSERT INTO [dbo].[DATA_EQUIPMENT_AC] ([CREATED_AT]      
+, [COD_EQUIP]      
+, [COD_COMP]      
+, [COD_AC]      
+, [NAME]      
+, [CODE]      
+, [MODIFY_DATE]      
+, [ACTIVE])      
+ VALUES (GETDATE(), @COD_EQUIP, @COD_COMP, @COD_AC, @NAME, @TID, NULL, 1);      
+      
+IF @@rowcount < 1      
+THROW 60000, 'COULD NOT REGISTER TID EQUIPMENT', 1;      
+      
+UPDATE DATA_TID_AVAILABLE_EC      
+SET AVAILABLE = 0      
+WHERE COD_DATA_EQUIP = @INSIDE;      
+      
+IF @@rowcount < 1      
+THROW 60001, 'COULD UPDATE TID EQUIPMENT AVAILABLE', 1;      
+      
+END   
+
+END
+ELSE 
+BEGIN
+
+
+IF (SELECT 
+COUNT(*)
+FROM COMMERCIAL_ESTABLISHMENT
+JOIN BRANCH_EC
+ON BRANCH_EC.COD_EC = COMMERCIAL_ESTABLISHMENT.COD_EC
+JOIN DEPARTMENTS_BRANCH
+ON DEPARTMENTS_BRANCH.COD_BRANCH = BRANCH_EC.COD_BRANCH
+JOIN ACQUIRER_KEYS_CREDENTIALS
+ON ACQUIRER_KEYS_CREDENTIALS.CODE_EC = COMMERCIAL_ESTABLISHMENT.COD_EC
+JOIN ACQUIRER
+ON ACQUIRER.COD_AC = ACQUIRER_KEYS_CREDENTIALS.COD_AC
+AND ACQUIRER.ACTIVE = 1
+AND ACQUIRER.[GROUP] = 'GlobalPayments'
+WHERE DEPARTMENTS_BRANCH.COD_DEPTO_BRANCH = @COD_DEPTO ) = 0 
+
+THROW 60086, 'THERE IS NO KEY FOR THE GLOBAL ACQUIRER', 1;      
+ 
+
+ IF (SELECT      
+   COUNT(*)      
+  FROM ROUTE_ACQUIRER      
+  WHERE COD_EQUIP = @COD_EQUIP      
+  AND ACTIVE = 1)      
+ = 0      
+      
+      
+-- Insere uma rota padr�o para o Equipamento              
+INSERT INTO ROUTE_ACQUIRER (COD_USER, COD_EQUIP, ACTIVE, CONF_TYPE, COD_BRAND, COD_AC, COD_SOURCE_TRAN)      
+ SELECT      
+     @COD_USER      
+    ,@COD_EQUIP      
+    ,1      
+    ,CONF_TYPE      
+    ,COD_BRAND      
+    ,ACQUIRER.COD_AC      
+    ,COD_SOURCE_TRAN      
+ FROM ROUTE_ACQUIRER_DEFAULT 
+ JOIN ACQUIRER 
+ ON ACQUIRER.COD_AC = ROUTE_ACQUIRER_DEFAULT.COD_AC
+ WHERE ACQUIRER.[GROUP] = 'GlobalPayments'
+ AND ACQUIRER.ACTIVE = 1
+ AND ROUTE_ACQUIRER_DEFAULT.COD_MODEL = @COD_MODEL     
+
+
+END
+
+
+      
+END      
+      
+-- Valida associa��o do terminal             
+      
+SELECT      
+ @CONT = COUNT(*)      
+FROM ASS_DEPTO_EQUIP      
+WHERE COD_EQUIP = @COD_EQUIP      
+AND ACTIVE = 1      
+IF @CONT > 0      
+THROW 61022, 'EQUIPMENT ALREADY ASSOCIATE TO ANOTHER DEPARTMENT', 1      
+      
+INSERT INTO ASS_DEPTO_EQUIP (COD_EQUIP, COD_DEPTO_BRANCH, ACTIVE, COD_USER)      
+ VALUES (@COD_EQUIP, @COD_DEPTO, 1, @COD_USER);      
+      
+IF @@rowcount < 1      
+THROW 60000, 'COULD NOT REGISTER ASS_DEPTO_EQUIP ', 1;      
+      
+END
+
+
+GO
+
+IF OBJECT_ID('SP_VAL_TID_AVAILABLE_EC') IS NOT NULL
+DROP PROCEDURE [SP_VAL_TID_AVAILABLE_EC]
+
+GO
+CREATE PROCEDURE SP_VAL_TID_AVAILABLE_EC    
+/*----------------------------------------------------------------------------------------                    
+Procedure Name: [SP_VAL_TID_AVAILABLE_EC]                    
+Project.......: TKPP                    
+-------------------------------------------------------------------------------------------                    
+Author                            VERSION        Date                          Description                    
+------------------------------------------------------------------------------------------                    
+Elir Ribeiro      v1      22/08/2018       CREATION         
+Kennedy Alef     v2      08/07/2019       ADD SEGMENTATION               
+Caike Uchoa      v3      17/06/2021       add global payments
+------------------------------------------------------------------------------------------*/ (    
+@COD_AC int,    
+@EC int,    
+@TYPE varchar(100),    
+@COD_EQUIP int    
+)    
+AS    
+  DECLARE @CONT int;    
+  DECLARE @TYPE_MODEL varchar(100);    
+  DECLARE @TYPE_KEY varchar(100);    
+  DECLARE @NAME_AC varchar(100);    
+  DECLARE @QTY int = 0;    
+  DECLARE @MODEL VARCHAR(100);  
+  DECLARE @COD_MODEL INT;
+    
+  BEGIN    
+SET @NAME_AC = (SELECT    
+  UPPER([GROUP])    
+ FROM ACQUIRER    
+ WHERE COD_AC = @COD_AC)    
+    
+SELECT    
+ @TYPE_MODEL = MODEL_GROUP.CODE,  
+ @MODEL = CODIGO,
+ @COD_MODEL= EQUIPMENT.COD_MODEL
+FROM EQUIPMENT    
+INNER JOIN EQUIPMENT_MODEL    
+ ON EQUIPMENT_MODEL.COD_MODEL = EQUIPMENT.COD_MODEL    
+INNER JOIN MODEL_GROUP    
+ ON MODEL_GROUP.COD_MODEL_GROUP = EQUIPMENT_MODEL.COD_MODEL_GROUP    
+WHERE COD_EQUIP = @COD_EQUIP    
+    
+IF @TYPE_MODEL <> 'ONLINE'    
+BEGIN    
+SET @TYPE_MODEL = 'PRESENCIAL';    
+SET @TYPE_KEY = 'TID';    
+    END    
+    ELSE    
+SET @TYPE_KEY = 'TID ONLINE';    
+    
+IF UPPER(@NAME_AC) = 'PAGSEGURO' AND @MODEL <> 'D150GLOBAL'  
+BEGIN    
+    
+    
+SELECT    
+ @QTY = COUNT(*)    
+FROM EQUIPMENT    
+JOIN EQUIPMENT_MODEL    
+ ON EQUIPMENT_MODEL.COD_MODEL = EQUIPMENT.COD_MODEL    
+JOIN MODEL_GROUP    
+ ON EQUIPMENT_MODEL.COD_MODEL_GROUP = MODEL_GROUP.COD_MODEL_GROUP    
+WHERE COD_EQUIP = @COD_EQUIP    
+AND MODEL_GROUP.COD_MODEL_GROUP = 1;    
+    
+IF (@QTY >= 1)    
+BEGIN    
+SELECT    
+ @COD_AC = ACQUIRER.COD_AC    
+FROM COMMERCIAL_ESTABLISHMENT    
+JOIN SEGMENTS    
+ ON SEGMENTS.COD_SEG = COMMERCIAL_ESTABLISHMENT.COD_SEG    
+JOIN SEGMENTS_GROUP    
+ ON SEGMENTS_GROUP.COD_SEG_GROUP = SEGMENTS.COD_SEG_GROUP    
+JOIN ACQUIRER    
+ ON ACQUIRER.COD_SEG_GROUP = SEGMENTS_GROUP.COD_SEG_GROUP    
+ and ACQUIRER.[GROUP] = 'PAGSEGURO'  
+WHERE COD_EC = @EC;    
+    
+SELECT    
+ @QTY = COUNT(*)    
+FROM DATA_EQUIPMENT_AC    
+WHERE COD_AC = @COD_AC    
+AND COD_EQUIP = @COD_EQUIP    
+AND ACTIVE = 1;    
+    
+IF @QTY > 0    
+THROW 61048, 'ALREADY EXISTS TID FOR THIS EQUIPMENT', 1;    
+    
+SELECT    
+ @QTY = COUNT(*)    
+FROM DATA_TID_AVAILABLE_EC    
+WHERE COD_AC = @COD_AC    
+AND ACTIVE = 1    
+AND AVAILABLE = 1    
+AND [NAME] = 'TID'    
+    
+IF @QTY <= 0    
+THROW 61042, 'TID NOT AVAILABLE', 1;    
+END;    
+    
+END;  
+
+IF @MODEL = 'D150GLOBAL'
+BEGIN
+
+IF (SELECT 
+COUNT(*)
+FROM COMMERCIAL_ESTABLISHMENT
+JOIN ACQUIRER_KEYS_CREDENTIALS
+ON ACQUIRER_KEYS_CREDENTIALS.CODE_EC = COMMERCIAL_ESTABLISHMENT.COD_EC
+JOIN ACQUIRER
+ON ACQUIRER.COD_AC = ACQUIRER_KEYS_CREDENTIALS.COD_AC
+AND ACQUIRER.ACTIVE = 1
+AND ACQUIRER.[GROUP] = 'GlobalPayments'
+WHERE COMMERCIAL_ESTABLISHMENT.COD_EC = @EC ) = 0 
+
+THROW 60086, 'THERE IS NO KEY FOR THE GLOBAL ACQUIRER', 1;      
+
+
+END
+
+ELSE    
+BEGIN    
+SELECT    
+ @CONT = COUNT(*)    
+FROM DATA_TID_AVAILABLE_EC    
+WHERE AVAILABLE = 1    
+AND [NAME] = @TYPE_KEY    
+AND COD_EC = @EC    
+AND COD_AC = @COD_AC    
+AND TYPE_KEY_AC = @TYPE_MODEL    
+END    
+IF @CONT = 3    
+THROW 61048, 'ALREADY EXISTS TID FOR THIS EQUIPMENT', 1;    
+    
+ELSE    
+IF @CONT < 1    
+THROW 61042, 'TID NOT AVAILABLE', 1;    
+    
+END;
+
+GO
+
+--ST-2220
+
+GO
+
+--ST-2222
+
+
+IF OBJECT_ID('SP_DATA_TRANSACTION') IS NOT NULL DROP PROCEDURE SP_DATA_TRANSACTION
+GO
+
+CREATE PROCEDURE [DBO].[SP_DATA_TRANSACTION]                    
+  
+/*********************************************************************************************************    
+----------------------------------------------------------------------------------------                    
+Procedure Name: [SP_DATA_TRANSACTION]                    
+Project.......: TKPP                    
+------------------------------------------------------------------------------------------                    
+Author                          VERSION        Date                            Description                    
+------------------------------------------------------------------------------------------                    
+Kennedy Alef                    V1            27/07/2018                        Creation                    
+Lucas Aguiar                    v2            21/11/2018                        Changed                  
+Am�s Corcino dos Santos         V3            17/01/2019                        Change        
+Caio Vitalino                   V4            17/06/2021                        Change
+------------------------------------------------------------------------------------------    
+*********************************************************************************************************/    
+                           
+(    
+    @TRANSACTIONCODE VARCHAR(300))    
+AS    
+BEGIN  
+SELECT  
+ [TRANSACTION].[BRAND]  
+   ,[TRANSACTION].[AMOUNT]  
+   ,CAST([dbo].[FN_FUS_UTF](ISNULL([TRANSACTION].[CREATED_AT], [TRANSACTION].[CREATED_AT])) AS DATETIME) AS [TRANSACTION_DATE]  
+   ,  
+ --CAST(((ISNULL([TRANSACTION].MODIFY_DATE, [TRANSACTION].CREATED_AT)  at time zone 'West Bank Standard Time') AT TIME ZONE 'UTC') AS DATETIME)  AS TRANSACTION_DATE,                     
+ [TRANSACTION].[CODE] AS [TRANSACTION_CODE]  
+   ,[SITUATION_TR] AS [SITUATION]  
+   ,[TRANSACTION_TYPE].[CODE] AS [TRAN_TYPE]  
+   ,[ACQUIRER].[CODE] AS [ACQ_CODE]  
+   ,[ACQUIRER].[NAME] AS [ACQ_NAME]  
+   ,[TRANSACTION].[CREATED_AT]  
+   ,[EQUIPMENT].[SERIAL]  
+   ,[TRANSACTION].[PAN]  
+   ,[TRANSACTION].[COMMENT] AS [COMMENT]  
+   ,[TRANSACTION].[TRACKING_TRANSACTION] AS [COD_RAST]  
+   ,[TRANSACTION].[DESCRIPTION]  
+   ,[TRANSACTION].[POSWEB]  
+   ,[TRANSACTION].[TYPE] AS [TXT_TRAN_TYPE]  
+   ,[TRANSACTION].[PLOTS]  
+   ,[TRANSACTION].[CARD_HOLDER_NAME]  
+   ,[TRANSACTION].[CARD_HOLDER_DOC]  
+   ,[TRANSACTION].[LOGICAL_NUMBER_ACQ]  
+   ,(SELECT 
+      ACQUIRER.[NAME]
+	  FROM REPORT_TRANSACTIONS_EXP
+JOIN DATA_TID_AVAILABLE_EC
+    ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+        AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+    ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+    ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+    ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+    ON tr.COD_AC = ACQUIRER.COD_AC
+        AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+        AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+        AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+        AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+        AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+		WHERE [TRANSACTION].[CODE] = @TRANSACTIONCODE) AS [ACQUIRER_TRANSACTION]
+		,(CASE  
+  WHEN (SELECT  
+     COUNT(*)  
+    FROM [TRANSACTION_SERVICES]  
+    WHERE [TRANSACTION_SERVICES].[COD_TRAN] = [TRANSACTION].[COD_TRAN]  
+    AND [TRANSACTION_SERVICES].[COD_ITEM_SERVICE] = 10)  
+   > 0 THEN 1  
+  ELSE 0  
+ END) AS [LINK_MODE]  
+   ,[TRANSACTION].TERMINAL_VERSION  
+   ,REPORT_TRANSACTIONS_EXP.TRAN_DATA_EXT_VALUE AS EXTERNALNSU  
+FROM [EQUIPMENT]  
+LEFT JOIN [ASS_DEPTO_EQUIP]  
+ ON [ASS_DEPTO_EQUIP].[COD_EQUIP] = [EQUIPMENT].[COD_EQUIP]  
+LEFT JOIN [TRANSACTION] WITH (NOLOCK)  
+ ON [TRANSACTION].[COD_ASS_DEPTO_TERMINAL] = [ASS_DEPTO_EQUIP].[COD_ASS_DEPTO_TERMINAL]  
+LEFT JOIN [TRANSACTION_TYPE]  
+ ON [TRANSACTION_TYPE].[COD_TTYPE] = [TRANSACTION].[COD_TTYPE]  
+LEFT JOIN [PRODUCTS_ACQUIRER]  
+ ON [PRODUCTS_ACQUIRER].[COD_PR_ACQ] = [TRANSACTION].[COD_PR_ACQ]  
+LEFT JOIN [ACQUIRER]  
+ ON [ACQUIRER].[COD_AC] = [PRODUCTS_ACQUIRER].[COD_AC]  
+LEFT JOIN [CURRENCY]  
+ ON [TRANSACTION].[COD_CURRRENCY] = [CURRENCY].[COD_CURRRENCY]  
+LEFT JOIN [SITUATION]  
+ ON [SITUATION].[COD_SITUATION] = [TRANSACTION].[COD_SITUATION]  
+LEFT JOIN [TRADUCTION_SITUATION]  
+ ON [TRADUCTION_SITUATION].[COD_SITUATION] = [SITUATION].[COD_SITUATION]  
+LEFT JOIN [POSWEB_DATA_TRANSACTION]  
+ ON [POSWEB_DATA_TRANSACTION].[COD_TRAN] = [TRANSACTION].[COD_TRAN]  
+LEFT JOIN REPORT_TRANSACTIONS_EXP  
+ ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN  
+WHERE [TRANSACTION].[CODE] = @TRANSACTIONCODE;  
+END;  
+  
+--ST-2222
+
+GO
+
+--ET-1414
+
+GO
+  IF EXISTS (SELECT
+		*
+	FROM sys.indexes
+	WHERE name = 'IX_REPORT_TRANSACTIONS_EXP_INCLUDE_COD_TRAN_TRANSACTION_CODE_LOGICAL_NUMBER_ACQ'
+	AND object_id = OBJECT_ID('[dbo].[REPORT_TRANSACTIONS_EXP]'))
+BEGIN
+CREATE NONCLUSTERED INDEX [IX_REPORT_TRANSACTIONS_EXP_INCLUDE_COD_TRAN_TRANSACTION_CODE_LOGICAL_NUMBER_ACQ]
+ON [dbo].[REPORT_TRANSACTIONS_EXP] ([COD_SITUATION])
+INCLUDE ([COD_TRAN], [TRANSACTION_CODE], [LOGICAL_NUMBER_ACQ])
+END
+GO
+
+GO
+  IF EXISTS (SELECT
+		*
+	FROM sys.indexes
+	WHERE name = '<IX_DATA_TID_AVAILABLE_EC_CONCILIATE>'
+	AND object_id = OBJECT_ID('[dbo].[REPORT_TRANSACTIONS_EXP]'))
+BEGIN
+CREATE NONCLUSTERED INDEX [<IX_DATA_TID_AVAILABLE_EC_CONCILIATE>]
+ON [dbo].[DATA_TID_AVAILABLE_EC] ([TID], [ACTIVE])
+INCLUDE ([COD_AC])
+END
+GO
+GO
+  IF EXISTS (SELECT
+		*
+	FROM sys.indexes
+	WHERE name = 'IX_TRANSACTION_TITLES_TO_CONCILIATE'
+	AND object_id = OBJECT_ID('[dbo].[REPORT_TRANSACTIONS_EXP]'))
+BEGIN
+CREATE NONCLUSTERED INDEX [IX_TRANSACTION_TITLES_TO_CONCILIATE]
+ON [dbo].[TRANSACTION_TITLES] ([IS_ASSIGN], [COD_SITUATION], [PREVISION_RECEIVE_DATE])
+INCLUDE ([COD_TRAN], [PLOT], [ACQ_TAX], [RECONCILED])
+END
+
+GO
+
+IF EXISTS (SELECT
+		*
+	FROM sys.indexes
+	WHERE name = 'IX_REPORT_TRANSACTIONS_EXP_LOGICAL_NUMBER_ACQ'
+	AND object_id = OBJECT_ID('[dbo].[REPORT_TRANSACTIONS_EXP]'))
+BEGIN
+	CREATE NONCLUSTERED INDEX [IX_REPORT_TRANSACTIONS_EXP_LOGICAL_NUMBER_ACQ]
+	ON [dbo].[REPORT_TRANSACTIONS_EXP] ([COD_SITUATION])
+	INCLUDE ([COD_TRAN],[LOGICAL_NUMBER_ACQ])
+END
+GO
+
+IF OBJECT_ID('SP_REG_TITLES_EDI_CONCILIATE') IS NOT NULL DROP PROCEDURE SP_REG_TITLES_EDI_CONCILIATE
+GO
+IF TYPE_ID('TP_TITLES_EDI_CONCILIATE') IS NOT NULL DROP TYPE TP_TITLES_EDI_CONCILIATE
+GO
+IF OBJECT_ID('TITLES_EDI_CONCILIATE') IS NOT NULL DROP TABLE TITLES_EDI_CONCILIATE
+GO
+IF OBJECT_ID('CONCILIATE_DISAGREEMENT') IS NOT NULL DROP TABLE CONCILIATE_DISAGREEMENT
+GO
+IF OBJECT_ID('FINANCE_RECONCILE_RESUME') IS NULL
+CREATE TABLE FINANCE_RECONCILE_RESUME
+(
+	COD_FIN_REC_RESUME INT NOT NULL PRIMARY KEY IDENTITY(1,1),
+	COD_AC INT FOREIGN KEY REFERENCES ACQUIRER (COD_AC),
+	ACQUIRER VARCHAR(255),
+	PREVISION_RECEIVE_DATE DATETIME,
+	QTY_TITLES INT,
+	QTY_ACQ INT,
+	QTY_TITLES_NOT_FOUND INT,
+	QTY_ACQ_NOT_FOUND INT,
+	QTY_RECONCILED INT,
+	AMOUNT_TKPP DECIMAL(22,6),
+	AMOUNT_ACQ DECIMAL(22,6),
+	ACTIVE INT DEFAULT 1,
+	RECONCILE_DATE DATETIME
+)
+
+GO
+GO
+IF OBJECT_ID('DISAGREEMENT_REASON') IS NOT NULL DROP TABLE DISAGREEMENT_REASON
+GO
+CREATE TABLE DISAGREEMENT_REASON
+(
+	COD_DIV_REASON INT PRIMARY KEY IDENTITY,
+	[DESCRIPTION] VARCHAR(255),
+	DETAIL VARCHAR(255),
+	ACTIVE INT DEFAULT 1
+)
+GO
+
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Data da transação divergente', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Tipo da transação incorreta', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Valor da transação', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Valor da parcela', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Prazo de pagamento expirado', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Parcela', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Previsão de pagamento incorreta', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Taxa de intermediação', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Valor liquido da transação', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Status de pagamento', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('OK', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('EDI não encontrado', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Título não encontrado', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Transação desfeita', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Transação cancelada', 1);
+INSERT INTO DISAGREEMENT_REASON ([DESCRIPTION], ACTIVE)
+	VALUES ('Motivo não encontrado', 1);
+GO
+
+CREATE TABLE CONCILIATE_DISAGREEMENT
+(
+	COD_CONC_DIVERGENCIES INT PRIMARY KEY IDENTITY,
+	COD_TITLE INT FOREIGN KEY REFERENCES TRANSACTION_TITLES (COD_TITLE),
+	COD_DIV_REASON INT FOREIGN KEY REFERENCES DISAGREEMENT_REASON (COD_DIV_REASON),
+	DETAIL VARCHAR(255),
+	ACTIVE INT
+);
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'RECONCILED'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD RECONCILED INT;
+END
+
+GO
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'COD_FIN_REC_RESUME'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD COD_FIN_REC_RESUME INT FOREIGN KEY REFERENCES FINANCE_RECONCILE_RESUME (COD_FIN_REC_RESUME);
+END
+GO
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'RECONCILE_DATE'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD RECONCILE_DATE DATETIME;
+END
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'API_CODE_MOVEMENT'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD API_CODE_MOVEMENT VARCHAR(255);
+END
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'RECEIVE_DATE'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD RECEIVE_DATE DATETIME;
+END
+
+GO
+IF OBJECT_ID('SP_FD_TITLES_TO_CONCILIATE') IS NOT NULL DROP PROCEDURE SP_FD_TITLES_TO_CONCILIATE
+GO
+
+IF TYPE_ID('TP_CONC_EDI_TITLES') IS NOT NULL DROP TYPE TP_CONC_EDI_TITLES
+GO
+
+CREATE TYPE TP_CONC_EDI_TITLES AS TABLE
+(	
+	COD_TITLE INT,
+	MOVEMENT_API_CODE VARCHAR(255),
+	INITIAL_TRAN_DATE  DATETIME,
+	ADJ_SALE_DATE DATETIME,
+	PAGSEGURO_CODE VARCHAR(255),
+	SALE_CODE VARCHAR(150),
+	PAYMENT_DEADLINE VARCHAR(255),
+	PLAN_DESC VARCHAR(255),
+	PLOT INT,
+	PLOTS INT,
+	MOVEMENT_DATE DATETIME,
+	TAX_PLOT_CUSTOMER DECIMAL (22,6),
+	RATE_BILLET_SHOP DECIMAL (22,6),
+	ORIGINAL_TRAN_VALUE DECIMAL (22,6),
+	TAX_PLOT_SELLER DECIMAL (22,6),
+	RATE_PLOT_SELLER DECIMAL (22,6),
+	INTERMEDIATION_TAX DECIMAL (22,6),
+	INTERMEDIATION_RATE DECIMAL (22,6),
+	TAX_REP_APLICATION DECIMAL (22,6),
+	LIQUID_TRAN_VALUE DECIMAL (22,6),
+	ANTECIP_TAX DECIMAL (22,6),
+	LIQUID_VALUE_ANTECIP DECIMAL (22,6),
+	PAYMENT_STATUS VARCHAR(255),
+	RESALE_IDENTIFY VARCHAR(255),
+	PAYMENT_FORM VARCHAR(255),
+	FIN_INSTITUTION VARCHAR(255),
+	ENTRY_CHANNEL VARCHAR(255),
+	READER VARCHAR(255),
+	CAPTURE_FORM VARCHAR(200),
+	BANK_CODE VARCHAR(200),
+	BANK_AGENCY VARCHAR(100),
+	BANK_ACCOUNT VARCHAR(100),
+	LOGICAL_NUMBER_ACQ VARCHAR(255),
+	BIN_CARD VARCHAR(200),
+	HOLDER_CARD VARCHAR(255),
+	AUTH_CODE VARCHAR(100),
+	CV_CODE VARCHAR(200),
+	SERIAL_EQUIP VARCHAR(255)
+);
+
+GO
+IF OBJECT_ID('SP_LS_TITLES_TO_CONCILIATE') IS NOT NULL DROP PROCEDURE SP_LS_TITLES_TO_CONCILIATE
+GO
+CREATE PROCEDURE SP_LS_TITLES_TO_CONCILIATE
+(
+	@PREVISION_RECEIVE_DATE DATETIME,
+	@ACQ_CODE VARCHAR(255)
+)
+AS
+BEGIN
+
+SELECT
+	TRANSACTION_TITLES.COD_TITLE
+   ,TRANSACTION_TITLES.COD_TRAN
+   ,REPORT_TRANSACTIONS_EXP.AMOUNT
+   ,REPORT_TRANSACTIONS_EXP.PLOTS
+   ,PLOT
+   ,TRADUCTION_SITUATION.SITUATION_TR AS SITUATION
+   ,TRAN_DATA_EXT_VALUE AS CV_CODE
+   ,AUTH_CODE
+   ,PREVISION_RECEIVE_DATE
+   ,ACQ_TAX
+   ,IIF(TRANSACTION_TITLES.IS_ASSIGN = 1, TRANSACTION_TITLES.IS_ASSIGN, (SELECT
+			IIF(COUNT(*) > 0, 1, 0)
+		FROM TRANSACTION_TITLES TT
+		JOIN [TRANSACTION] T
+			ON T.COD_TRAN = TT.COD_TRAN
+		JOIN TRANSACTION_SERVICES TS
+			ON T.COD_TRAN = TS.COD_TRAN
+		WHERE T.COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+		AND TT.IS_ASSIGN = 1)
+	) AS IS_ASSIGN
+   ,REPORT_TRANSACTIONS_EXP.SITUATION AS TRAN_SITUATION
+   ,ACQUIRER.CODE AS ACQUIRER
+FROM TRANSACTION_TITLES
+JOIN REPORT_TRANSACTIONS_EXP
+	ON REPORT_TRANSACTIONS_EXP.COD_TRAN = TRANSACTION_TITLES.COD_TRAN
+JOIN TRADUCTION_SITUATION
+	ON TRADUCTION_SITUATION.COD_SITUATION = TRANSACTION_TITLES.COD_SITUATION
+JOIN DATA_TID_AVAILABLE_EC
+	ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+		AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+	ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+	ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+	ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+	ON tr.COD_AC = ACQUIRER.COD_AC
+		AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+		AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+		AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+		AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+		AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+WHERE CAST(PREVISION_RECEIVE_DATE AS DATE) = @PREVISION_RECEIVE_DATE
+AND ACQUIRER.CODE = @ACQ_CODE
+AND TRANSACTION_TITLES.COD_SITUATION IN
+(
+4, --> AGUARDANDO PAGAMENTO
+8, --> PAGO
+17,--> AGUARDANDO CONFIRMAÇÃO DE PAGAMENTO
+24,--> AGENDA FINANCEIRA BLOQUEADA
+25,--> LIBERADO
+30 --> AGUARDANDO SPLIT DA AGENDA
+)
+AND ISNULL(TRANSACTION_TITLES.RECONCILED, 0) <> 1
+AND REPORT_TRANSACTIONS_EXP.COD_SITUATION = 3
+AND ISNULL(TRANSACTION_TITLES.IS_ASSIGN, 0) = 0
+END
+
+GO
+
+GO
+
+GO
+IF OBJECT_ID('SP_LS_TITLES_NOT_CONCILIATION_OPENED_BY_ACQ') IS NOT NULL DROP PROCEDURE SP_LS_TITLES_NOT_CONCILIATION_OPENED_BY_ACQ
+GO
+CREATE PROCEDURE SP_LS_TITLES_NOT_CONCILIATION_OPENED_BY_ACQ    
+AS
+SELECT
+	COUNT(*) QTYTITLES
+   ,ACQUIRER.[NAME] AS ACQUIRERNAME
+   ,ACQUIRER.[CODE] AS ACQUIRERCODE
+   ,CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE) AS PREVISIONPAYMENTDAY
+   ,TRANSACTION_TITLES.IS_ASSIGN
+FROM TRANSACTION_TITLES
+JOIN REPORT_TRANSACTIONS_EXP
+	ON REPORT_TRANSACTIONS_EXP.COD_TRAN = TRANSACTION_TITLES.COD_TRAN
+JOIN DATA_TID_AVAILABLE_EC
+	ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+		AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+	ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+	ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+	ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+	ON tr.COD_AC = ACQUIRER.COD_AC
+		AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+		AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+		AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+		AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+		AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+LEFT JOIN FINANCE_RECONCILE_RESUME
+	ON FINANCE_RECONCILE_RESUME.COD_FIN_REC_RESUME = TRANSACTION_TITLES.COD_FIN_REC_RESUME
+		AND FINANCE_RECONCILE_RESUME.ACTIVE = 1
+WHERE REPORT_TRANSACTIONS_EXP.COD_SITUATION = 3
+AND ISNULL(TRANSACTION_TITLES.RECONCILED, 0) <> 1
+AND CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE) > DATEADD(YEAR, -1, CAST(GETDATE() AS DATE))
+AND CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE) > '2021-06-20'
+AND CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE) < GETDATE()
+
+--AND ACQUIRER.CODE = '115122641'
+AND TRANSACTION_TITLES.COD_SITUATION IN
+(
+4, --> AGUARDANDO PAGAMENTO        
+8, --> PAGO        
+17,--> AGUARDANDO CONFIRMAÇÃO DE PAGAMENTO        
+24,--> AGENDA FINANCEIRA BLOQUEADA        
+25,--> LIBERADO        
+30 --> AGUARDANDO SPLIT DA AGENDA        
+)
+AND FINANCE_RECONCILE_RESUME.COD_FIN_REC_RESUME IS NULL
+AND ISNULL(TRANSACTION_TITLES.IS_ASSIGN, 0) = 0
+GROUP BY ACQUIRER.[NAME]
+		,CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE)
+		,ACQUIRER.[CODE]
+		,TRANSACTION_TITLES.IS_ASSIGN
+ORDER BY CAST(TRANSACTION_TITLES.PREVISION_RECEIVE_DATE AS DATE), ACQUIRER.[NAME]
+, ACQUIRER.[CODE]
+
+GO
+IF OBJECT_ID('SP_FD_EDI_TITLE') IS NOT NULL DROP PROCEDURE SP_FD_EDI_TITLE
+GO
+IF OBJECT_ID('SP_FD_TITLES_TO_ASSIGN') IS NOT NULL DROP PROCEDURE SP_FD_TITLES_TO_ASSIGN
+GO
+IF TYPE_ID('TP_FD_EDI_TITLE') IS NOT NULL DROP TYPE TP_FD_EDI_TITLE
+GO
+CREATE TYPE TP_FD_EDI_TITLE AS TABLE
+(
+	AUTH_CODE VARCHAR(100),
+	CV_CODE VARCHAR(255),
+	ACQUIRER VARCHAR(255),
+	PLOT INT,
+	TRAN_PS_DATE DATETIME
+);
+GO
+
+CREATE PROCEDURE SP_FD_EDI_TITLE  
+(  
+ @TP_FD_EDI_TITLE TP_FD_EDI_TITLE READONLY  
+)  
+AS  
+BEGIN
+
+SELECT
+	REPORT_TRANSACTIONS_EXP.AUTH_CODE
+   ,TRAN_DATA_EXT_VALUE AS CV_CODE
+   ,ACQUIRER.CODE AS ACQUIRER
+   ,TRANSACTION_TITLES.PREVISION_RECEIVE_DATE
+   ,NULL RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.SITUATION AS TRAN_SITUATION
+   ,TRADUCTION_SITUATION.SITUATION_TR AS SITUATION
+   ,3 PAYMENT_STATUS
+   ,TRANSACTION_TITLES.COD_TITLE
+   ,REPORT_TRANSACTIONS_EXP.COD_TRAN
+   ,IIF(TRANSACTION_TITLES.IS_ASSIGN = 1, TRANSACTION_TITLES.IS_ASSIGN, (SELECT
+			IIF(COUNT(*) > 0, 1, 0)
+		FROM TRANSACTION_TITLES TT
+		JOIN [TRANSACTION] T
+			ON T.COD_TRAN = TT.COD_TRAN
+		JOIN TRANSACTION_SERVICES TS
+			ON T.COD_TRAN = TS.COD_TRAN
+		WHERE T.COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+		AND TT.IS_ASSIGN = 1)
+	) AS IS_ASSIGN
+   ,0 AS INTERMEDIATION_TAX
+   ,ACQ_TAX
+   ,NULL AS PAGSEGURO_CODE
+   ,NULL AS API_MOVEMENT_CODE
+   ,ISNULL(TRANSACTION_TITLES.PLOT, 0) PLOT
+   ,0 CONCILIATED
+   ,REPORT_TRANSACTIONS_EXP.AMOUNT
+   ,REPORT_TRANSACTIONS_EXP.PLOTS
+   ,PREVISION_RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.TRANSACTION_DATE
+   ,CASE
+		WHEN TRANSACTION_TITLES.COD_TITLE IS NULL THEN (SELECT
+					COD_DIV_REASON
+				FROM DISAGREEMENT_REASON
+				WHERE DISAGREEMENT_REASON.[DESCRIPTION] = 'Título não encontrado')
+
+		WHEN REPORT_TRANSACTIONS_EXP.SITUATION = 'DESFEITA' THEN (SELECT
+					COD_DIV_REASON
+				FROM DISAGREEMENT_REASON
+				WHERE DISAGREEMENT_REASON.[DESCRIPTION] = 'Transação desfeita')
+		WHEN CAST(REPORT_TRANSACTIONS_EXP.TRANSACTION_DATE AS DATE) <> CAST(TP.TRAN_PS_DATE AS DATE) THEN (SELECT
+					COD_DIV_REASON
+				FROM DISAGREEMENT_REASON
+				WHERE DISAGREEMENT_REASON.[DESCRIPTION] = 'Data da transação divergente')
+		ELSE 16
+	END AS COD_DIV_REASON
+FROM REPORT_TRANSACTIONS_EXP
+JOIN DATA_TID_AVAILABLE_EC
+	ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+		AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+	ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+	ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+	ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+	ON tr.COD_AC = ACQUIRER.COD_AC
+		AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+		AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+		AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+		AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+		AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+JOIN @TP_FD_EDI_TITLE TP
+	ON TP.AUTH_CODE = REPORT_TRANSACTIONS_EXP.AUTH_CODE
+		AND TP.CV_CODE = REPORT_TRANSACTIONS_EXP.TRAN_DATA_EXT_VALUE
+		AND ACQUIRER.CODE = TP.ACQUIRER
+LEFT JOIN TRANSACTION_TITLES
+	ON REPORT_TRANSACTIONS_EXP.COD_TRAN = TRANSACTION_TITLES.COD_TRAN
+		AND TP.PLOT = TRANSACTION_TITLES.PLOT
+LEFT JOIN TRADUCTION_SITUATION
+	ON TRADUCTION_SITUATION.COD_SITUATION = TRANSACTION_TITLES.COD_SITUATION
+
+END
+
+GO
+
+
+CREATE TYPE TP_TITLES_EDI_CONCILIATE AS TABLE
+(
+	COD_TITLE INT,
+	COD_TRAN INT,
+	PREVISION_RECEIVE_DATE DATETIME,
+	RECEIVE_DATE DATETIME,
+	ACQUIRER VARCHAR(200),
+	PAGSEGURO_CODE VARCHAR(255),
+	API_CODE_MOVEMENT VARCHAR(255),
+	PAYMENT_STATUS VARCHAR(200),
+	CONCILIATED INT,
+	COD_DIV_REASON INT,
+	IS_ASSIGN INT
+);
+
+GO
+
+CREATE TABLE TITLES_EDI_CONCILIATE
+(
+	COD_TITLE_EDI_CONC INT PRIMARY KEY IDENTITY(1,1),
+	COD_TRAN INT FOREIGN KEY REFERENCES [TRANSACTION] (COD_TRAN),
+	COD_TITLE INT FOREIGN KEY REFERENCES [TRANSACTION_TITLES] (COD_TITLE),
+	PREVISION_RECEIVE_DATE DATETIME,
+	RECEIVE_DATE DATETIME,
+	COD_AC INT FOREIGN KEY REFERENCES ACQUIRER (COD_AC),
+	ACQUIRER VARCHAR(200),
+	COD_DIV_REASON INT FOREIGN KEY REFERENCES DISAGREEMENT_REASON (COD_DIV_REASON),
+	PAYMENT_STATUS VARCHAR(255),
+	CONCILIATED INT,
+	API_CODE_MOVEMENT VARCHAR(255),
+	TRY_CONCILIATE_DATE DATETIME,
+	ACTIVE INT DEFAULT 1
+)
+
+GO
+
+CREATE PROCEDURE SP_REG_TITLES_EDI_CONCILIATE
+(
+	@TP_TITLES_EDI_CONCILIATE TP_TITLES_EDI_CONCILIATE READONLY,
+	@PREVISION_RECEIVE_DATE DATETIME,
+	@QTY_TITLES INT,
+	@QTY_ACQ INT,
+	@QTY_TITLES_NOT_FOUND INT,
+	@QTY_ACQ_NOT_FOUND INT,
+	@QTY_RECONCILED INT,
+	@AMOUNT_TKPP DECIMAL(22,6),
+	@AMOUNT_ACQ DECIMAL(22,6),
+	@ACQUIRER_CODE VARCHAR(100)
+)
+AS
+BEGIN
+
+INSERT INTO TITLES_EDI_CONCILIATE (COD_TRAN,
+COD_TITLE,
+PREVISION_RECEIVE_DATE,
+RECEIVE_DATE,
+COD_AC,
+ACQUIRER,
+COD_DIV_REASON,
+PAYMENT_STATUS,
+CONCILIATED,
+API_CODE_MOVEMENT,
+TRY_CONCILIATE_DATE)
+	SELECT
+		TP.COD_TRAN
+	   ,TP.COD_TITLE
+	   ,TP.PREVISION_RECEIVE_DATE
+	   ,TP.RECEIVE_DATE
+	   ,ACQUIRER.COD_AC
+	   ,TP.ACQUIRER
+	   ,TP.COD_DIV_REASON
+	   ,TP.PAYMENT_STATUS
+	   ,TP.CONCILIATED
+	   ,TP.API_CODE_MOVEMENT
+	   ,GETDATE()
+	FROM @TP_TITLES_EDI_CONCILIATE TP
+	LEFT JOIN TITLES_EDI_CONCILIATE
+		ON TP.COD_TITLE = TITLES_EDI_CONCILIATE.COD_TITLE
+	JOIN ACQUIRER
+		ON ACQUIRER.CODE = TP.ACQUIRER
+	WHERE TP.CONCILIATED = 0
+	AND TITLES_EDI_CONCILIATE.COD_TITLE IS NULL
+
+IF (@@rowcount < 1)
+	AND (SELECT
+			COUNT(*)
+		FROM @TP_TITLES_EDI_CONCILIATE TP
+		LEFT JOIN TITLES_EDI_CONCILIATE
+			ON TP.COD_TITLE = TITLES_EDI_CONCILIATE.COD_TITLE
+		JOIN ACQUIRER
+			ON ACQUIRER.CODE = TP.ACQUIRER
+		WHERE TP.CONCILIATED = 0
+		AND TITLES_EDI_CONCILIATE.COD_TITLE IS NULL)
+	> 0
+THROW 60000, 'COULD NOT REGISTER PROVISORY_PASS_USER', 1
+
+DECLARE @COD_AC INT = (SELECT
+		COD_AC
+	FROM ACQUIRER
+	WHERE CODE = @ACQUIRER_CODE);
+
+INSERT INTO FINANCE_RECONCILE_RESUME (PREVISION_RECEIVE_DATE,
+QTY_TITLES,
+QTY_ACQ,
+QTY_TITLES_NOT_FOUND,
+QTY_ACQ_NOT_FOUND,
+QTY_RECONCILED,
+AMOUNT_TKPP,
+AMOUNT_ACQ,
+COD_AC,
+RECONCILE_DATE)
+	VALUES (@PREVISION_RECEIVE_DATE, @QTY_TITLES, @QTY_ACQ, @QTY_TITLES_NOT_FOUND, @QTY_ACQ_NOT_FOUND, @QTY_RECONCILED, @AMOUNT_TKPP, @AMOUNT_ACQ, @COD_AC, GETDATE())
+IF (@@rowcount < 1)
+THROW 60000, 'COULD NOT REGISTER PROVISORY_PASS_USER', 1;
+
+DECLARE @COD_FIN_REC_RESUME INT = @@identity
+
+UPDATE TRANSACTION_TITLES
+SET RECONCILED = 1
+   ,RECONCILE_DATE = GETDATE()
+   ,API_CODE_MOVEMENT = TP.API_CODE_MOVEMENT
+	--    ,RECEIVE_DATE = TP.RECEIVE_DATE
+   ,COD_FIN_REC_RESUME = @COD_FIN_REC_RESUME
+FROM TRANSACTION_TITLES
+JOIN @TP_TITLES_EDI_CONCILIATE TP
+	ON TP.COD_TITLE = TRANSACTION_TITLES.COD_TITLE
+WHERE TP.CONCILIATED = 1
+
+
+END;
+
+GO
+
+GO
+
+CREATE PROCEDURE SP_FD_TITLES_TO_ASSIGN      
+(      
+ @TP_FD_EDI_TITLE TP_FD_EDI_TITLE READONLY      
+)      
+AS      
+BEGIN
+SELECT
+	REPORT_TRANSACTIONS_EXP.AUTH_CODE
+   ,TRAN_DATA_EXT_VALUE AS CV_CODE
+   ,ACQUIRER.CODE AS ACQUIRER
+   ,TRANSACTION_TITLES.PREVISION_RECEIVE_DATE
+   ,NULL RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.SITUATION AS TRAN_SITUATION
+   ,3 PAYMENT_STATUS
+   ,TRANSACTION_TITLES.COD_TITLE
+   ,REPORT_TRANSACTIONS_EXP.COD_TRAN
+   ,IIF(TRANSACTION_TITLES.IS_ASSIGN = 1, TRANSACTION_TITLES.IS_ASSIGN, (SELECT
+			IIF(COUNT(*) > 0, 1, 0)
+		FROM TRANSACTION_TITLES TT
+		JOIN [TRANSACTION] T
+			ON T.COD_TRAN = TT.COD_TRAN
+		JOIN TRANSACTION_SERVICES TS
+			ON T.COD_TRAN = TS.COD_TRAN
+		WHERE T.COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+		AND TT.IS_ASSIGN = 1)
+	) AS IS_ASSIGN
+   ,0 AS INTERMEDIATION_TAX
+   ,ACQ_TAX
+   ,NULL AS PAGSEGURO_CODE
+   ,NULL AS API_MOVEMENT_CODE
+   ,ISNULL(TRANSACTION_TITLES.PLOT, 0) PLOT
+   ,0 CONCILIATED
+   ,REPORT_TRANSACTIONS_EXP.AMOUNT
+   ,REPORT_TRANSACTIONS_EXP.PLOTS
+   ,PREVISION_RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.TRANSACTION_DATE
+   ,SITUATION.NAME AS SITUATION
+FROM TRANSACTION_TITLES
+JOIN REPORT_TRANSACTIONS_EXP
+	ON REPORT_TRANSACTIONS_EXP.COD_TRAN = TRANSACTION_TITLES.COD_TRAN
+JOIN DATA_TID_AVAILABLE_EC
+	ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+		AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+	ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+	ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+	ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+	ON tr.COD_AC = ACQUIRER.COD_AC
+		AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+		AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+		AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+		AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+		AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+JOIN @TP_FD_EDI_TITLE TP
+	ON TP.AUTH_CODE = REPORT_TRANSACTIONS_EXP.AUTH_CODE
+		AND TP.CV_CODE = REPORT_TRANSACTIONS_EXP.TRAN_DATA_EXT_VALUE
+		AND ACQUIRER.CODE = TP.ACQUIRER
+		AND TP.PLOT = TRANSACTION_TITLES.PLOT
+JOIN SITUATION
+	ON SITUATION.COD_SITUATION = TRANSACTION_TITLES.COD_SITUATION
+WHERE ISNULL(TRANSACTION_TITLES.RECONCILED, 0) <> 1
+--JOIN @TP_FD_EDI_TITLE TP ON      
+-- TP.CV_cODE      
+END
+
+GO
+
+IF OBJECT_ID('RECONCILE_ASSIGN_DETAIL') IS NOT NULL DROP TABLE RECONCILE_ASSIGN_DETAIL
+GO
+--IF OBJECT_ID('ASSIGNED_CONCILIATE_RESUME') IS NOT NULL DROP TABLE ASSIGNED_CONCILIATE_RESUME
+GO
+IF OBJECT_ID('SP_REG_RECONCILE_ASSIGN_RESUME') IS NOT NULL DROP PROCEDURE SP_REG_RECONCILE_ASSIGN_RESUME
+GO
+IF OBJECT_ID('SP_REG_RECONCILE_ASSIGN_DETAIL') IS NOT NULL DROP PROCEDURE SP_REG_RECONCILE_ASSIGN_DETAIL
+GO
+IF TYPE_ID('TP_FD_EDI_TITLE_NOT_FOUND') IS NOT NULL DROP TYPE TP_FD_EDI_TITLE_NOT_FOUND
+GO
+IF OBJECT_ID('SP_FD_TITLES_TO_ASSIGN') IS NOT NULL DROP PROCEDURE SP_FD_TITLES_TO_ASSIGN
+GO
+
+CREATE PROCEDURE SP_FD_TITLES_TO_ASSIGN    
+(    
+ @TP_FD_EDI_TITLE TP_FD_EDI_TITLE READONLY    
+)    
+AS    
+BEGIN
+SELECT
+	REPORT_TRANSACTIONS_EXP.AUTH_CODE
+   ,TRAN_DATA_EXT_VALUE AS CV_CODE
+   ,ACQUIRER.CODE AS ACQUIRER
+   ,TRANSACTION_TITLES.PREVISION_RECEIVE_DATE
+   ,NULL RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.SITUATION AS TRAN_SITUATION
+   ,3 PAYMENT_STATUS
+   ,TRANSACTION_TITLES.COD_TITLE
+   ,REPORT_TRANSACTIONS_EXP.COD_TRAN
+   ,IIF(TRANSACTION_TITLES.IS_ASSIGN = 1, TRANSACTION_TITLES.IS_ASSIGN, (SELECT
+			IIF(COUNT(*) > 0, 1, 0)
+		FROM TRANSACTION_TITLES TT
+		JOIN [TRANSACTION] T
+			ON T.COD_TRAN = TT.COD_TRAN
+		JOIN TRANSACTION_SERVICES TS
+			ON T.COD_TRAN = TS.COD_TRAN
+		WHERE T.COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+		AND TT.IS_ASSIGN = 1)
+	) AS IS_ASSIGN
+   ,0 AS INTERMEDIATION_TAX
+   ,ACQ_TAX
+   ,NULL AS PAGSEGURO_CODE
+   ,NULL AS API_MOVEMENT_CODE
+   ,ISNULL(TRANSACTION_TITLES.PLOT, 0) PLOT
+   ,0 CONCILIATED
+   ,REPORT_TRANSACTIONS_EXP.AMOUNT
+   ,REPORT_TRANSACTIONS_EXP.PLOTS
+   ,PREVISION_RECEIVE_DATE
+   ,REPORT_TRANSACTIONS_EXP.TRANSACTION_DATE
+   ,SITUATION.NAME AS SITUATION
+FROM TRANSACTION_TITLES
+JOIN REPORT_TRANSACTIONS_EXP
+	ON REPORT_TRANSACTIONS_EXP.COD_TRAN = TRANSACTION_TITLES.COD_TRAN
+JOIN DATA_TID_AVAILABLE_EC
+	ON DATA_TID_AVAILABLE_EC.TID = REPORT_TRANSACTIONS_EXP.LOGICAL_NUMBER_ACQ
+		AND DATA_TID_AVAILABLE_EC.ACTIVE = 1
+JOIN [TRANSACTION](NOLOCK)
+	ON [TRANSACTION].COD_TRAN = REPORT_TRANSACTIONS_EXP.COD_TRAN
+JOIN ACQUIRER
+	ON DATA_TID_AVAILABLE_EC.COD_AC = ACQUIRER.COD_AC
+JOIN ASS_TR_TYPE_COMP
+	ON [TRANSACTION].COD_ASS_TR_COMP = ASS_TR_TYPE_COMP.COD_ASS_TR_COMP
+LEFT JOIN ASS_TR_TYPE_COMP tr
+	ON tr.COD_AC = ACQUIRER.COD_AC
+		AND tr.COD_TTYPE = ASS_TR_TYPE_COMP.COD_TTYPE
+		AND tr.COD_BRAND = ASS_TR_TYPE_COMP.COD_BRAND
+		AND tr.COD_SOURCE_TRAN = ASS_TR_TYPE_COMP.COD_SOURCE_TRAN
+		AND tr.PLOT_INI = ASS_TR_TYPE_COMP.PLOT_INI
+		AND tr.PLOT_END = ASS_TR_TYPE_COMP.PLOT_END
+JOIN @TP_FD_EDI_TITLE TP
+	ON TP.AUTH_CODE = REPORT_TRANSACTIONS_EXP.AUTH_CODE
+		AND TP.CV_CODE = REPORT_TRANSACTIONS_EXP.TRAN_DATA_EXT_VALUE
+		AND ACQUIRER.CODE = TP.ACQUIRER
+		AND TP.PLOT = TRANSACTION_TITLES.PLOT
+JOIN SITUATION
+	ON SITUATION.COD_SITUATION = TRANSACTION_TITLES.COD_SITUATION
+WHERE ISNULL(TRANSACTION_TITLES.RECONCILED, 0) <> 1
+--JOIN @TP_FD_EDI_TITLE TP ON    
+-- TP.CV_cODE    
+END
+
+GO
+IF OBJECT_ID('ASSIGNED_CONCILIATE_RESUME') IS NULL
+CREATE TABLE ASSIGNED_CONCILIATE_RESUME
+(
+	COD_ASS_CONC_RESUME INT NOT NULL PRIMARY KEY IDENTITY(1,1),
+	COD_AC INT FOREIGN KEY REFERENCES ACQUIRER (COD_AC),
+	ACQUIRER VARCHAR(255),
+	DATE_CONCILIATED DATETIME,
+	PS_QTY_TITLES INT,
+	QTY_FOUNDED INT,
+	NOT_FOUNDED INT,
+	SUM_TRAN_FOUNDED DECIMAL(22,6),
+	SUM_CALCULATED_FOUNDED DECIMAL(22,6),
+	SUM_TRAN_NOT_FOUND DECIMAL(22,6),
+	SUM_CALCULATED_NOT_FOUNDED DECIMAL(22,6)
+);
+
+GO
+
+CREATE PROCEDURE SP_REG_RECONCILE_ASSIGN_RESUME  
+(  
+ @DATE_CONCILIATED    DATETIME,  
+ @PS_QTY_TITLES     INT,  
+ @QTY_FOUNDED     INT,  
+ @NOT_FOUNDED     INT,  
+ @SUM_TRAN_FOUNDED    DECIMAL(22,6),  
+ @SUM_CALCULATED_FOUNDED   DECIMAL(22,6),  
+ @SUM_TRAN_NOT_FOUND    DECIMAL(22,6),  
+ @SUM_CALCULATED_NOT_FOUNDED  DECIMAL(22,6),  
+ @ACQUIRER_CODE     VARCHAR(255)  
+)  
+AS  
+BEGIN
+  
+  
+DECLARE @COD_AC INT,  
+  @ACQUIRER VARCHAR(255);
+
+SELECT
+	@COD_AC = COD_AC
+   ,@ACQUIRER = ACQUIRER.[NAME]
+FROM ACQUIRER
+WHERE CODE = @ACQUIRER_CODE
+
+INSERT INTO ASSIGNED_CONCILIATE_RESUME (DATE_CONCILIATED
+, PS_QTY_TITLES
+, QTY_FOUNDED
+, NOT_FOUNDED
+, SUM_TRAN_FOUNDED
+, SUM_CALCULATED_FOUNDED
+, SUM_TRAN_NOT_FOUND
+, SUM_CALCULATED_NOT_FOUNDED
+, COD_AC
+, ACQUIRER)
+	VALUES (@DATE_CONCILIATED, @PS_QTY_TITLES, @QTY_FOUNDED, @NOT_FOUNDED, @SUM_TRAN_FOUNDED, @SUM_CALCULATED_FOUNDED, @SUM_TRAN_NOT_FOUND, @SUM_CALCULATED_NOT_FOUNDED, @COD_AC, @ACQUIRER);
+
+SELECT
+	@@identity AS RESULT
+
+END;
+GO
+
+
+CREATE TYPE TP_FD_EDI_TITLE_NOT_FOUND AS TABLE
+(
+	COD_ASS_CONC_RESUME INT,
+	ACQUIRER VARCHAR(255),
+	COD_TITLE INT,
+	COD_TRAN INT,
+	AUTH_CODE VARCHAR(255),
+	CV_CODE VARCHAR(255),
+	API_MOVEMENT_CODE VARCHAR(255),
+	ANTECIPATION_TAX DECIMAL(22,6),
+	INTERMEDIATION_TAX DECIMAL(22,6),
+	IS_SPLIT INT,
+	LIQUID_VALUE DECIMAL(22,6),
+	PAGSEGURO_CODE VARCHAR(255),
+	PLOT INT,
+	PREVISION_RECEIVE_DATE DATETIME,
+	RECEIVE_DATE DATETIME,
+	SITUATION VARCHAR(255),
+	TRAN_SITUATION VARCHAR(255),
+	CONCILIATED INT,
+	TRAN_VALUE DECIMAL(22,6),
+	LIQUID_TRAN_VALUE DECIMAL(22,6),
+	PLOT_VALUE DECIMAL(22,6),
+	LIQUID_ANTECIPATION_VALUE DECIMAL(22,6)	
+);
+
+GO
+
+
+CREATE TABLE RECONCILE_ASSIGN_DETAIL
+(
+	COD_REC_ASSIGN_DETAIL INT PRIMARY KEY IDENTITY(1,1),
+	COD_ASS_CONC_RESUME INT NOT NULL FOREIGN KEY REFERENCES ASSIGNED_CONCILIATE_RESUME (COD_ASS_CONC_RESUME),
+	COD_TITLE INT FOREIGN KEY REFERENCES TRANSACTION_TITLES (COD_TITLE),
+	COD_TRAN INT FOREIGN KEY REFERENCES [TRANSACTION] (COD_TRAN),
+	ACQUIRER VARCHAR(255),
+	AUTH_CODE VARCHAR(255),
+	CV_CODE VARCHAR(255),
+	API_MOVEMENT_CODE VARCHAR(255),
+	ANTECIPATION_TAX DECIMAL(22,6),
+	INTERMEDIATION_TAX DECIMAL(22,6),
+	IS_SPLIT INT,
+	LIQUID_VALUE DECIMAL(22,6),
+	PAGSEGURO_CODE VARCHAR(255),
+	PLOT INT,
+	PREVISION_RECEIVE_DATE DATETIME,
+	RECEIVE_DATE DATETIME,
+	SITUATION VARCHAR(255),
+	TRAN_SITUATION VARCHAR(255),
+	CONCILIATED INT,
+	TRAN_VALUE DECIMAL(22,6),
+	LIQUID_TRAN_VALUE DECIMAL(22,6),
+	PLOT_VALUE DECIMAL(22,6),
+	LIQUID_ANTECIPATION_VALUE DECIMAL(22,6)	
+);
+
+GO
+
+CREATE PROCEDURE SP_REG_RECONCILE_ASSIGN_DETAIL  
+(  
+ @TP_FD_EDI_TITLE_NOT_FOUND TP_FD_EDI_TITLE_NOT_FOUND READONLY  
+)  
+AS  
+BEGIN
+
+INSERT INTO RECONCILE_ASSIGN_DETAIL (COD_ASS_CONC_RESUME,
+COD_TITLE,
+COD_TRAN,
+ACQUIRER,
+AUTH_CODE,
+CV_CODE,
+API_MOVEMENT_CODE,
+ANTECIPATION_TAX,
+INTERMEDIATION_TAX,
+IS_SPLIT,
+LIQUID_VALUE,
+PAGSEGURO_CODE,
+PLOT,
+PREVISION_RECEIVE_DATE,
+RECEIVE_DATE,
+SITUATION,
+TRAN_SITUATION,
+CONCILIATED,
+TRAN_VALUE,
+LIQUID_TRAN_VALUE,
+PLOT_VALUE,
+LIQUID_ANTECIPATION_VALUE)
+	SELECT
+		TP.COD_ASS_CONC_RESUME
+	   ,TP.COD_TITLE
+	   ,TP.COD_TRAN
+	   ,TP.ACQUIRER
+	   ,TP.AUTH_CODE
+	   ,TP.CV_CODE
+	   ,TP.API_MOVEMENT_CODE
+	   ,TP.ANTECIPATION_TAX
+	   ,TP.INTERMEDIATION_TAX
+	   ,TP.IS_SPLIT
+	   ,TP.LIQUID_VALUE
+	   ,TP.PAGSEGURO_CODE
+	   ,TP.PLOT
+	   ,TP.PREVISION_RECEIVE_DATE
+	   ,TP.RECEIVE_DATE
+	   ,TP.SITUATION
+	   ,TP.TRAN_SITUATION
+	   ,TP.CONCILIATED
+	   ,TP.TRAN_VALUE
+	   ,TP.LIQUID_TRAN_VALUE
+	   ,TP.PLOT_VALUE
+	   ,TP.LIQUID_ANTECIPATION_VALUE
+	FROM @TP_FD_EDI_TITLE_NOT_FOUND TP
+	LEFT JOIN RECONCILE_ASSIGN_DETAIL
+		ON RECONCILE_ASSIGN_DETAIL.COD_TITLE = TP.COD_TITLE
+	WHERE TP.CONCILIATED = 0
+	AND RECONCILE_ASSIGN_DETAIL.COD_ASS_CONC_RESUME IS NULL
+
+UPDATE TRANSACTION_TITLES
+SET COD_ASS_CONC_RESUME = TP.COD_ASS_CONC_RESUME
+   ,RECONCILED = 0
+   ,RECONCILE_DATE = GETDATE()
+   ,IS_ASSIGN = 1
+   ,ASSIGN_RECEIVE_DATE = TP.RECEIVE_DATE
+FROM TRANSACTION_TITLES
+JOIN @TP_FD_EDI_TITLE_NOT_FOUND TP
+	ON TP.COD_TITLE = TRANSACTION_TITLES.COD_TITLE
+WHERE TP.CONCILIATED = 0
+
+UPDATE TRANSACTION_TITLES
+SET ASSIGN_MOVEMENT_CODE = TP.API_MOVEMENT_CODE
+   ,ASSIGN_RECEIVE_DATE = TP.RECEIVE_DATE
+   ,ASSIGN_ANTECIPATION_VALUE = TP.LIQUID_ANTECIPATION_VALUE
+   ,ASSIGN_ANTECIPATION_TAX = TP.ANTECIPATION_TAX
+   ,INTERMEDIATION_TAX = TP.INTERMEDIATION_TAX
+   ,COD_ASS_CONC_RESUME = TP.COD_ASS_CONC_RESUME
+   ,RECONCILED = 1
+   ,RECONCILE_DATE = GETDATE()
+   ,IS_ASSIGN = 1
+FROM TRANSACTION_TITLES
+JOIN @TP_FD_EDI_TITLE_NOT_FOUND TP
+	ON TP.COD_TITLE = TRANSACTION_TITLES.COD_TITLE
+WHERE TP.CONCILIATED = 1
+
+END
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'COD_ASS_CONC_RESUME'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD COD_ASS_CONC_RESUME INT FOREIGN KEY REFERENCES ASSIGNED_CONCILIATE_RESUME (COD_ASS_CONC_RESUME);
+END
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'ASSIGN_MOVEMENT_CODE'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD ASSIGN_MOVEMENT_CODE VARCHAR(255);
+END
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'ASSIGN_RECEIVE_DATE'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD ASSIGN_RECEIVE_DATE DATETIME;
+END
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'ASSIGN_ANTECIPATION_VALUE'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD ASSIGN_ANTECIPATION_VALUE DECIMAL(22, 6);
+END
+
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'ASSIGN_ANTECIPATION_TAX'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD ASSIGN_ANTECIPATION_TAX DECIMAL(22, 6);
+END
+
+GO
+
+IF NOT EXISTS (SELECT
+		1
+	FROM SYS.COLUMNS
+	WHERE NAME = N'INTERMEDIATION_TAX'
+	AND object_id = OBJECT_ID(N'TRANSACTION_TITLES'))
+BEGIN
+ALTER TABLE TRANSACTION_TITLES
+ADD INTERMEDIATION_TAX DECIMAL(22, 6);
+END
+
+GO
+
+
+--ET-1414
+GO
